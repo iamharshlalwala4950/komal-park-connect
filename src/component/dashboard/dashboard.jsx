@@ -78,10 +78,7 @@ export default function Dashboard({ onLogout }) {
     };
 
     // Fetch master relational profiles when filters or updates mutate
-    useEffect(() => {
-        fetchInitialData();
-    }, [fetchInitialData, selectedFilterYear]);
-
+   
     const fetchInitialData = useCallback(async () => {
         try {
             setIsLoading(true);
@@ -122,9 +119,13 @@ export default function Dashboard({ onLogout }) {
                 "Syncing Error: Failed to load ledger logs from Supabase server.",
             );
         } finally {
-            isLoading && setIsLoading(false);
+            setIsLoading(false);
         }
     }, []);
+
+    useEffect(() => {
+        fetchInitialData();
+    }, [fetchInitialData]);
 
     // 4. Financial Dashboard Rolling Carry-Forward Aggregations Logic
     const getRollingFinancialTotals = () => {
