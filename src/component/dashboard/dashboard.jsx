@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
-import DashboardOverview from "../dashboard/dashboardoverview"
+import React, { useState, useEffect, useCallback } from "react";
+import DashboardOverview from "../dashboard/dashboardoverview";
 import { supabase } from "../../supabaseClient";
-import './dashboard.css';
+import "./dashboard.css";
 
 export default function Dashboard({ onLogout }) {
     // Global Calendar Matrices
@@ -20,14 +20,14 @@ export default function Dashboard({ onLogout }) {
         "December",
     ];
 
-    const currentYear = new Date().getFullYear(); 
+    const currentYear = new Date().getFullYear();
     const currentMonthIndex = new Date().getMonth(); // 0-indexed month
 
     // 1. Structural View States
-    const [activeTab, setActiveTab] = useState("dashboard"); 
-    const [isDarkMode, setIsDarkMode] = useState(false);     
-    const [showProfileDropdown, setShowProfileDropdown] = useState(false); 
-    
+    const [activeTab, setActiveTab] = useState("dashboard");
+    const [isDarkMode, setIsDarkMode] = useState(false);
+    const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+
     // Live Supabase Sync States
     const [flats, setFlats] = useState([]);
     const [transactions, setTransactions] = useState([]);
@@ -36,13 +36,15 @@ export default function Dashboard({ onLogout }) {
 
     // Filter Controls
     const [selectedFilterYear, setSelectedFilterYear] = useState(currentYear);
-    const [selectedFilterMonth, setSelectedFilterMonth] = useState(MONTH_MATRIX[currentMonthIndex]);
+    const [selectedFilterMonth, setSelectedFilterMonth] = useState(
+        MONTH_MATRIX[currentMonthIndex],
+    );
 
     // 2. Controlled Form States & Modal Controls (Make Maintenance Entry Modal)
     const [isEntryModalOpen, setIsEntryModalOpen] = useState(false);
     const [formFlatNo, setFormFlatNo] = useState("");
     const [formSelectedMonths, setFormSelectedMonths] = useState([]);
-    const MAINTENANCE_RATE = 500; 
+    const MAINTENANCE_RATE = 500;
 
     // Controlled Form States & Modal Controls (Extra Expense Modal)
     const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
@@ -66,8 +68,8 @@ export default function Dashboard({ onLogout }) {
         try {
             const dateObj = new Date(dateString);
             if (isNaN(dateObj.getTime())) return dateString; // Fallback if already formatted
-            const day = String(dateObj.getDate()).padStart(2, '0');
-            const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const day = String(dateObj.getDate()).padStart(2, "0");
+            const month = String(dateObj.getMonth() + 1).padStart(2, "0");
             const year = String(dateObj.getFullYear()).slice(-2); // Get last 2 digits of year
             return `${day}-${month}-${year}`;
         } catch (e) {
@@ -78,23 +80,32 @@ export default function Dashboard({ onLogout }) {
     // Fetch master relational profiles when filters or updates mutate
     useEffect(() => {
         fetchInitialData();
-    }, [selectedFilterYear]);
+    }, [fetchInitialData, selectedFilterYear]);
 
-    const fetchInitialData = async () => {
+    const fetchInitialData = useCallback(async () => {
         try {
             setIsLoading(true);
-            
+
             // Promise tracking for historical relational parameters
-            const [flatsResponse, transactionsResponse, expensesResponse] = await Promise.all([
-                supabase.from("flats").select("*"),
-                supabase.from("transactions").select("*").order("id", { ascending: false }),
-                supabase.from("expenses").select("*").order("id", { ascending: false })
-            ]);
+            const [flatsResponse, transactionsResponse, expensesResponse] =
+                await Promise.all([
+                    supabase.from("flats").select("*"),
+                    supabase
+                        .from("transactions")
+                        .select("*")
+                        .order("id", { ascending: false }),
+                    supabase
+                        .from("expenses")
+                        .select("*")
+                        .order("id", { ascending: false }),
+                ]);
 
             if (flatsResponse.error) throw flatsResponse.error;
             if (transactionsResponse.error) throw transactionsResponse.error;
             if (expensesResponse.error) {
-                console.warn("Expenses table reference omitted or unprovisioned. Falling back to safe arrays.");
+                console.warn(
+                    "Expenses table reference omitted or unprovisioned. Falling back to safe arrays.",
+                );
             }
 
             // Numeric sorting patch configuration logic
@@ -107,11 +118,13 @@ export default function Dashboard({ onLogout }) {
             setExpenses(expensesResponse?.data || []);
         } catch (error) {
             console.error("Supabase operational read crash:", error.message);
-            alert("Syncing Error: Failed to load ledger logs from Supabase server.");
+            alert(
+                "Syncing Error: Failed to load ledger logs from Supabase server.",
+            );
         } finally {
             isLoading && setIsLoading(false);
         }
-    };
+    }, []);
 
     // 4. Financial Dashboard Rolling Carry-Forward Aggregations Logic
     const getRollingFinancialTotals = () => {
@@ -121,48 +134,66 @@ export default function Dashboard({ onLogout }) {
         const selectedMonthIdx = MONTH_MATRIX.indexOf(selectedFilterMonth);
 
         // Filter transactions up to the currently selected month and year bound
-        transactions.forEach(t => {
+        transactions.forEach((t) => {
             const matchYear = t.billing_year;
             if (matchYear < selectedFilterYear) {
                 totalCollectedMaintenance += Number(t.amount);
             } else if (matchYear === selectedFilterYear) {
-                t.selected_months.forEach(mStr => {
+                t.selected_months.forEach((mStr) => {
                     const mName = mStr.split(" ")[0];
                     const mIdx = MONTH_MATRIX.indexOf(mName);
                     if (mIdx <= selectedMonthIdx) {
-                        totalCollectedMaintenance += (Number(t.amount) / t.selected_months.length);
+                        totalCollectedMaintenance +=
+                            Number(t.amount) / t.selected_months.length;
                     }
                 });
             }
         });
 
         // Compute expenditures dynamically against carry forward matrix
-        expenses.forEach(e => {
+        expenses.forEach((e) => {
             const expDate = new Date(e.expense_date || e.created_at);
             const expYear = expDate.getFullYear();
             const expMonthIdx = expDate.getMonth();
 
             if (expYear < selectedFilterYear) {
                 totalExtraExpensesPaid += Number(e.amount);
-            } else if (expYear === selectedFilterYear && expMonthIdx <= selectedMonthIdx) {
+            } else if (
+                expYear === selectedFilterYear &&
+                expMonthIdx <= selectedMonthIdx
+            ) {
                 totalExtraExpensesPaid += Number(e.amount);
             }
         });
 
-        const activeMonthCollection = transactions.filter(t => 
-            t.billing_year === selectedFilterYear && 
-            t.selected_months.some(m => m.startsWith(selectedFilterMonth))
-        ).reduce((acc, curr) => acc + (Number(curr.amount) / curr.selected_months.length), 0);
+        const activeMonthCollection = transactions
+            .filter(
+                (t) =>
+                    t.billing_year === selectedFilterYear &&
+                    t.selected_months.some((m) =>
+                        m.startsWith(selectedFilterMonth),
+                    ),
+            )
+            .reduce(
+                (acc, curr) =>
+                    acc + Number(curr.amount) / curr.selected_months.length,
+                0,
+            );
 
-        const activeMonthExpense = expenses.filter(e => {
-            const d = new Date(e.expense_date || e.created_at);
-            return d.getFullYear() === selectedFilterYear && d.getMonth() === selectedMonthIdx;
-        }).reduce((acc, curr) => acc + Number(curr.amount), 0);
+        const activeMonthExpense = expenses
+            .filter((e) => {
+                const d = new Date(e.expense_date || e.created_at);
+                return (
+                    d.getFullYear() === selectedFilterYear &&
+                    d.getMonth() === selectedMonthIdx
+                );
+            })
+            .reduce((acc, curr) => acc + Number(curr.amount), 0);
 
         return {
             rollingBalance: totalCollectedMaintenance - totalExtraExpensesPaid,
             currentMonthCollection: activeMonthCollection,
-            currentMonthExpense: activeMonthExpense
+            currentMonthExpense: activeMonthExpense,
         };
     };
 
@@ -170,32 +201,42 @@ export default function Dashboard({ onLogout }) {
 
     // Unique active members context counter filter matching target window selection scope
     const uniquePaidMembersCount = new Set(
-        transactions.filter(t => t.billing_year === selectedFilterYear && 
-            t.selected_months.some(m => m.startsWith(selectedFilterMonth))
-        ).map(t => t.flat_no)
+        transactions
+            .filter(
+                (t) =>
+                    t.billing_year === selectedFilterYear &&
+                    t.selected_months.some((m) =>
+                        m.startsWith(selectedFilterMonth),
+                    ),
+            )
+            .map((t) => t.flat_no),
     ).size;
 
     // 5. UNIFIED LEDGER ASSEMBLY ENGINE (Credit & Debit Mapping Integration)
     // Map transactions as maintenance entries (Credit) and expenses as debit entries filtered by target calendar year
-    const creditRows = transactions.filter(t => t.billing_year === selectedFilterYear).map(t => ({
-        ...t,
-        ledger_type: "CREDIT",
-        sorting_date: t.payment_date || t.created_at
-    }));
+    const creditRows = transactions
+        .filter((t) => t.billing_year === selectedFilterYear)
+        .map((t) => ({
+            ...t,
+            ledger_type: "CREDIT",
+            sorting_date: t.payment_date || t.created_at,
+        }));
 
-    const debitRows = expenses.filter(e => {
-        const d = new Date(e.expense_date || e.created_at);
-        return d.getFullYear() === selectedFilterYear;
-    }).map(e => ({
-        ...e,
-        ledger_type: "DEBIT",
-        flat_no: "N/A", // Expenses are universal building costs
-        name: e.description || "Building Expenditure",
-        contact: "N/A",
-        payment_date: e.expense_date || e.created_at.split('T')[0],
-        selected_months: [e.expense_type || "Anonymous"],
-        sorting_date: e.expense_date || e.created_at
-    }));
+    const debitRows = expenses
+        .filter((e) => {
+            const d = new Date(e.expense_date || e.created_at);
+            return d.getFullYear() === selectedFilterYear;
+        })
+        .map((e) => ({
+            ...e,
+            ledger_type: "DEBIT",
+            flat_no: "N/A", // Expenses are universal building costs
+            name: e.description || "Building Expenditure",
+            contact: "N/A",
+            payment_date: e.expense_date || e.created_at.split("T")[0],
+            selected_months: [e.expense_type || "Anonymous"],
+            sorting_date: e.expense_date || e.created_at,
+        }));
 
     // Combine lists and order them descending based on actual dates or entry ids
     const combinedLedgerList = [...creditRows, ...debitRows].sort((a, b) => {
@@ -205,7 +246,10 @@ export default function Dashboard({ onLogout }) {
     // 6. Pagination View Row Slicing Calculations
     const indexOfLastEntry = currentPage * entriesPerPage;
     const indexOfFirstEntry = indexOfLastEntry - entriesPerPage;
-    const currentEntries = combinedLedgerList.slice(indexOfFirstEntry, indexOfLastEntry);
+    const currentEntries = combinedLedgerList.slice(
+        indexOfFirstEntry,
+        indexOfLastEntry,
+    );
     const totalPages = Math.ceil(combinedLedgerList.length / entriesPerPage);
 
     const handlePageChange = (pageNumber) => {
@@ -216,9 +260,14 @@ export default function Dashboard({ onLogout }) {
     const handleMonthSelectionToggle = (monthName) => {
         const constructStringTarget = `${monthName} ${selectedFilterYear}`;
         if (formSelectedMonths.includes(constructStringTarget)) {
-            setFormSelectedMonths(formSelectedMonths.filter(m => m !== constructStringTarget));
+            setFormSelectedMonths(
+                formSelectedMonths.filter((m) => m !== constructStringTarget),
+            );
         } else {
-            setFormSelectedMonths([...formSelectedMonths, constructStringTarget]);
+            setFormSelectedMonths([
+                ...formSelectedMonths,
+                constructStringTarget,
+            ]);
         }
     };
 
@@ -232,24 +281,33 @@ export default function Dashboard({ onLogout }) {
     const handleSubmitMaintenanceEntry = async (e) => {
         e.preventDefault();
         if (!formFlatNo || formSelectedMonths.length === 0) {
-            alert("Validation Interrupted: Choose target resident unit profile and months.");
+            alert(
+                "Validation Interrupted: Choose target resident unit profile and months.",
+            );
             return;
         }
 
-        const targetMemberProfile = flats.find(f => f.flat_no === formFlatNo);
+        const targetMemberProfile = flats.find((f) => f.flat_no === formFlatNo);
         const payloadData = {
             flat_no: formFlatNo,
-            name: targetMemberProfile ? targetMemberProfile.owner_name : "Unknown Occupant",
-            contact: targetMemberProfile ? targetMemberProfile.contact_no : "N/A",
-            payment_date: new Date().toISOString().split('T')[0],
+            name: targetMemberProfile
+                ? targetMemberProfile.owner_name
+                : "Unknown Occupant",
+            contact: targetMemberProfile
+                ? targetMemberProfile.contact_no
+                : "N/A",
+            payment_date: new Date().toISOString().split("T")[0],
             selected_months: [...formSelectedMonths],
             total_months_paid: formSelectedMonths.length,
-            amount: formSelectedMonths.length * MAINTENANCE_RATE, 
-            billing_year: parseInt(selectedFilterYear)
+            amount: formSelectedMonths.length * MAINTENANCE_RATE,
+            billing_year: parseInt(selectedFilterYear),
         };
 
         try {
-            const { data, error } = await supabase.from("transactions").insert([payloadData]).select();
+            const { data, error } = await supabase
+                .from("transactions")
+                .insert([payloadData])
+                .select();
             if (error) throw error;
 
             if (data) {
@@ -265,7 +323,9 @@ export default function Dashboard({ onLogout }) {
     const handleSubmitExtraExpense = async (e) => {
         e.preventDefault();
         if (!expenseName || !expenseAmount) {
-            alert("Please complete the form detailing description and pricing metrics.");
+            alert(
+                "Please complete the form detailing description and pricing metrics.",
+            );
             return;
         }
 
@@ -273,17 +333,27 @@ export default function Dashboard({ onLogout }) {
             expense_type: "Anonymous",
             description: expenseName,
             amount: Number(expenseAmount),
-            expense_date: new Date().toISOString().split('T')[0]
+            expense_date: new Date().toISOString().split("T")[0],
         };
 
         try {
-            const { data, error } = await supabase.from("expenses").insert([payloadExpense]).select();
+            const { data, error } = await supabase
+                .from("expenses")
+                .insert([payloadExpense])
+                .select();
             if (error) throw error;
 
             if (data) {
                 setExpenses([data[0], ...expenses]);
             } else {
-                setExpenses([{ id: Date.now(), created_at: new Date().toISOString(), ...payloadExpense }, ...expenses]);
+                setExpenses([
+                    {
+                        id: Date.now(),
+                        created_at: new Date().toISOString(),
+                        ...payloadExpense,
+                    },
+                    ...expenses,
+                ]);
             }
 
             setExpenseName("");
@@ -292,7 +362,14 @@ export default function Dashboard({ onLogout }) {
             alert("Extra Expense registered and configured successfully!");
         } catch (error) {
             console.error(error);
-            setExpenses([{ id: Date.now(), created_at: new Date().toISOString(), ...payloadExpense }, ...expenses]);
+            setExpenses([
+                {
+                    id: Date.now(),
+                    created_at: new Date().toISOString(),
+                    ...payloadExpense,
+                },
+                ...expenses,
+            ]);
             setExpenseName("");
             setExpenseAmount("");
             setIsExpenseModalOpen(false);
@@ -300,17 +377,26 @@ export default function Dashboard({ onLogout }) {
     };
 
     const handleDeleteRecordRow = async (item) => {
-        const targetTable = item.ledger_type === "CREDIT" ? "transactions" : "expenses";
-        if (!window.confirm(`Cloud Execution Rule: Purge selected ${item.ledger_type.toLowerCase()} registry item permanently?`)) return;
+        const targetTable =
+            item.ledger_type === "CREDIT" ? "transactions" : "expenses";
+        if (
+            !window.confirm(
+                `Cloud Execution Rule: Purge selected ${item.ledger_type.toLowerCase()} registry item permanently?`,
+            )
+        )
+            return;
 
         try {
-            const { error } = await supabase.from(targetTable).delete().eq("id", item.id);
+            const { error } = await supabase
+                .from(targetTable)
+                .delete()
+                .eq("id", item.id);
             if (error) throw error;
 
             if (targetTable === "transactions") {
-                setTransactions(transactions.filter(t => t.id !== item.id));
+                setTransactions(transactions.filter((t) => t.id !== item.id));
             } else {
-                setExpenses(expenses.filter(e => e.id !== item.id));
+                setExpenses(expenses.filter((e) => e.id !== item.id));
             }
         } catch (error) {
             alert(`Deletion Process Stopped: ${error.message}`);
@@ -332,14 +418,26 @@ export default function Dashboard({ onLogout }) {
                 .from("flats")
                 .update({
                     owner_name: formOwnerNameEdit,
-                    contact_no: formContactNoEdit
+                    contact_no: formContactNoEdit,
                 })
                 .eq("id", editingFlatId);
 
             if (error) throw error;
 
-            const updatedFlats = flats.map(f => f.id === editingFlatId ? { ...f, owner_name: formOwnerNameEdit, contact_no: formContactNoEdit } : f);
-            setFlats(updatedFlats.sort((a, b) => parseInt(a.flat_no, 10) - parseInt(b.flat_no, 10)));
+            const updatedFlats = flats.map((f) =>
+                f.id === editingFlatId
+                    ? {
+                          ...f,
+                          owner_name: formOwnerNameEdit,
+                          contact_no: formContactNoEdit,
+                      }
+                    : f,
+            );
+            setFlats(
+                updatedFlats.sort(
+                    (a, b) => parseInt(a.flat_no, 10) - parseInt(b.flat_no, 10),
+                ),
+            );
             setIsFlatEditModalOpen(false);
         } catch (error) {
             alert(`Database Update Failed: ${error.message}`);
@@ -349,19 +447,29 @@ export default function Dashboard({ onLogout }) {
     // 9. WHATSAPP INVOICE GENERATOR ROUTER
     const handleSendWhatsAppInvoice = (item) => {
         if (item.ledger_type === "DEBIT") {
-            alert("Expenditure logs cannot be routed to a specific resident profile via WhatsApp.");
+            alert(
+                "Expenditure logs cannot be routed to a specific resident profile via WhatsApp.",
+            );
             return;
         }
 
-        const cleanContact = item.contact ? item.contact.replace(/\D/g, '') : "";
+        const cleanContact = item.contact
+            ? item.contact.replace(/\D/g, "")
+            : "";
         if (!cleanContact || cleanContact.length < 10) {
-            alert("Operation Aborted: Target flat member profile does not possess a valid contact number.");
+            alert(
+                "Operation Aborted: Target flat member profile does not possess a valid contact number.",
+            );
             return;
         }
 
         // Constructing precise time parameters dynamically
-        const currentTimeString = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-        
+        const currentTimeString = new Date().toLocaleTimeString("en-US", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: true,
+        });
+
         // Assembling text payload parameters matching blueprint guidelines precisely
         const messagePayload = `*Komal Park Maintenance Receipt*
 
@@ -369,24 +477,33 @@ export default function Dashboard({ onLogout }) {
 *Flat No:* ${item.flat_no}
 *Contact Number:* ${item.contact}
 *Entry Date:* ${formatDateDDMMYY(item.payment_date)}
-*How many months data that flat member has paid:* ${item.total_months_paid || item.selected_months.length} Months (${item.selected_months.join(', ')})
-*Amount Paid:* ₹${Number(item.amount).toLocaleString('en-IN')}
+*How many months data that flat member has paid:* ${item.total_months_paid || item.selected_months.length} Months (${item.selected_months.join(", ")})
+*Amount Paid:* ₹${Number(item.amount).toLocaleString("en-IN")}
 *Time:* ${currentTimeString}`;
 
         const encodedURLText = encodeURIComponent(messagePayload);
         // Prefix with standard country code if missing
-        const formattedPhone = cleanContact.length === 10 ? `91${cleanContact}` : cleanContact;
+        const formattedPhone =
+            cleanContact.length === 10 ? `91${cleanContact}` : cleanContact;
         const targetApiEndpoint = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodedURLText}`;
-        
-        window.open(targetApiEndpoint, '_blank');
+
+        window.open(targetApiEndpoint, "_blank");
     };
 
     // Layout Theme Styles Configuration Setup
     const themeClass = isDarkMode ? "bg-dark text-white" : "bg-light text-dark";
-    const cardClass = isDarkMode ? "bg-secondary bg-opacity-25 border-secondary text-white" : "bg-white text-dark border-0 shadow-sm";
-    const sidebarBg = isDarkMode ? "bg-black bg-opacity-50 text-white" : "bg-white text-dark";
-    const tableClass = isDarkMode ? "table-dark table-striped" : "table-striped";
-    const modalBgClass = isDarkMode ? "bg-dark text-white border-secondary" : "bg-white text-dark";
+    const cardClass = isDarkMode
+        ? "bg-secondary bg-opacity-25 border-secondary text-white"
+        : "bg-white text-dark border-0 shadow-sm";
+    const sidebarBg = isDarkMode
+        ? "bg-black bg-opacity-50 text-white"
+        : "bg-white text-dark";
+    const tableClass = isDarkMode
+        ? "table-dark table-striped"
+        : "table-striped";
+    const modalBgClass = isDarkMode
+        ? "bg-dark text-white border-secondary"
+        : "bg-white text-dark";
 
     return (
         <div
