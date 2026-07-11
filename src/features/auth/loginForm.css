@@ -1,0 +1,39 @@
+body {
+    background: linear-gradient(135deg, #0d6efd, #6ea8fe);
+
+    font-family: "Segoe UI", sans-serif;
+}
+
+.login-card {
+    border-radius: 18px;
+}
+
+.card-body {
+    padding: 40px;
+}
+
+.form-control,
+.input-group-text {
+    height: 50px;
+}
+
+.form-control:focus {
+    box-shadow: none;
+
+    border-color: #0d6efd;
+}
+.LoginButtonSection .btn-primary {
+    height: 50px;
+
+    font-weight: 600;
+
+    border-radius: 8px;
+}
+#forgotPassword {
+    font-size: 14px;
+}
+@media (max-width: 576px) {
+    .card-body {
+        padding: 30px 20px;
+    }
+}
