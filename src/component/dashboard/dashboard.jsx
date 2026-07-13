@@ -96,6 +96,7 @@ export default function Dashboard({ onLogout }) {
             setFormSelectedMonths([currentStringTarget]);
             setIncludeTransferFee(false);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isEntryModalOpen, selectedFilterYear]);
 
     // Helper Utility function to format dates to DD-MM-YY
